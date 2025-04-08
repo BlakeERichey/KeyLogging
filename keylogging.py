@@ -10,23 +10,41 @@ import mss
 import cv2
 import numpy as np
 
-USER_ID = 'user123'  # Replace with actual user ID
-# Create a unique session ID and folder
-session_id = str(uuid.uuid4())
-session_folder = f'Session-{session_id}'
-os.makedirs(session_folder)
+PROJECT_NAME = 'TicTacToe'
+if not os.path.exists(PROJECT_NAME):
+    os.makedirs(PROJECT_NAME)
+SESSION_LOG_FILE = os.path.join(PROJECT_NAME, 'session_log.csv')
 
-# Create images subdirectory inside the session folder
-images_folder = os.path.join(session_folder, 'images')
-os.makedirs(images_folder)
+# Get user input for user_id
+USER_ID = input("Enter user ID: ")
+KEY_TO_MONITOR = keyboard.Key.f1 #replace with None for single session
 
 # Create a CSV to track session details if it doesn't exist
-session_log_file = 'session_log.csv'
-if not os.path.exists(session_log_file):
-    with open(session_log_file, 'a', newline='') as file:
+if not os.path.exists(SESSION_LOG_FILE):
+    with open(SESSION_LOG_FILE, 'a', newline='') as file:
         writer = csv.writer(file)
         writer.writerow(['Session ID', 'User ID', 'Start Time', 'Duration'])
 
+# Function to create a new session
+def create_new_session():
+    global session_id, session_folder, images_folder, start_time
+    session_id = str(uuid.uuid4())
+    session_folder = os.path.join(PROJECT_NAME, f'Session-{session_id}')
+    os.makedirs(session_folder)
+    images_folder = os.path.join(session_folder, 'images')
+    os.makedirs(images_folder)
+    # Record the start time
+    start_time = time.time()
+    print(f"{session_folder} started.")
+
+def end_session():
+    # Update the session duration in the session_log.csv on interrupt
+    end_time = time.time()
+    duration = end_time - start_time
+    with open(SESSION_LOG_FILE, 'a', newline='') as file:
+        writer = csv.writer(file)
+        writer.writerow([session_id, USER_ID, start_time, duration])
+    print(f"{session_folder} ended.")
 
 def log_to_csv(file_name, data):
     with open(os.path.join(session_folder, file_name), 'a', newline='') as file:
@@ -51,15 +69,20 @@ key_press_times = {}
 mouse_press_times = {}
 
 def on_press(key):
-    press_time = time.time()
-    key_press_times[key] = press_time
-    log_to_csv('keyboard.csv', [USER_ID, get_window_focus(), key, 'pressed', press_time])
+    if key == KEY_TO_MONITOR:  # Keybind to create a new session
+        end_session()
+        create_new_session()
+    else:
+        press_time = time.time()
+        key_press_times[key] = press_time
+        log_to_csv('keyboard.csv', [USER_ID, get_window_focus(), key, 'pressed', press_time])
 
 def on_release(key):
-    release_time = time.time()
-    press_time = key_press_times.pop(key, None)
-    duration = release_time - press_time if press_time else 0
-    log_to_csv('keyboard.csv', [USER_ID, get_window_focus(), key, 'released', press_time, release_time, duration])
+    if not key == KEY_TO_MONITOR:  # Keybind to create a new session
+        release_time = time.time()
+        press_time = key_press_times.pop(key, None)
+        duration = release_time - press_time if press_time else 0
+        log_to_csv('keyboard.csv', [USER_ID, get_window_focus(), key, 'released', press_time, release_time, duration])
 
 def on_click(x, y, button, pressed):
     timestamp = time.time()
@@ -126,6 +149,7 @@ def capture_screen(fps=30, resolution=(512, 512)):
             frame_num += 1
             time.sleep(frame_interval)
 
+create_new_session()
 keyboard_listener = keyboard.Listener(on_press=on_press, on_release=on_release)
 mouse_listener = mouse.Listener(on_click=on_click, on_move=on_move)
 
@@ -135,18 +159,8 @@ mouse_listener_thread = threading.Thread(target=mouse_listener.start)
 keyboard_listener_thread.start()
 mouse_listener_thread.start()
 
-
-# Record the start time
-start_time = time.time()
-
 def signal_handler(sig, frame):
-    # Update the session duration in the session_log.csv on interrupt
-    end_time = time.time()
-    duration = end_time - start_time
-    with open('session_log.csv', 'a', newline='') as file:
-        writer = csv.writer(file)
-        writer.writerow([session_id, USER_ID, start_time, duration])
-    print(f"{session_folder} ended.")
+    end_session()
     os._exit(0)
 
 signal.signal(signal.SIGINT, signal_handler)
